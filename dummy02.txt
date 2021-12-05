@@ -1,0 +1,33 @@
+ def initjsonObject(self,readerOrSender):
+        jsonObject = {}
+        if readerOrSender == 'receiver':
+            jsonObject['header'], jsonObject['body'] ={},{}
+            jsonObject['header']['comm'],jsonObject['header']['ack'],jsonObject['header']['win']='', 0,0
+
+        if readerOrSender == 'sender':
+            jsonObject['header'], jsonObject['body'] ={},{}
+            jsonObject['header']['comm'],jsonObject['header']['seq'],jsonObject['header']['len']='',0,0
+
+        return jsonObject
+
+
+    def formatSenderPayload(self, comm, seq, len, body):
+        self.sender_payload['header']['comm'] = comm
+        self.sender_payload['header']['seq'] = seq
+        self.sender_payload['header']['len'] = len
+
+        if body:
+            self.sender_payload['body'] = body
+
+
+
+
+    def formatReceiverPayload(self, comm, ack, window):
+        self.receiver_payload['header']['comm'] = comm
+        self.receiver_payload['header']['ack'] = ack
+        self.receiver_payload['header']['win'] = window
+
+    def updateExpectedAck(self):
+        #here the expected ack will get updated with the len it's sending
+        self.expected_ack = self.len + 1
+        pass

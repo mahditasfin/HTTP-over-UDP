@@ -1,0 +1,64 @@
+class UDPjointServerClient(object):
+    def __init__(self, inputFile, outputFile, payload, lsock):
+        self.sock = lsock
+        self.HEADER_LENGTH = 20
+        self.current_file_queue = []
+        self.file = ''
+        self.keep_track = 1
+        #sender variables
+        self.inputFile = inputFile
+        self.total_packets_left = 0
+        self.initial_expected_ack = 1
+        self.expected_ack = 0
+        self.start_Connection = False
+        self.sender_command = ''
+        self.syn = 0
+        self.seq = 0
+        self.len = 0
+        self.MSS = 1024
+        self.window_sender = 5120
+        self.file_Size = os.path.getsize(self.inputFile)
+        self.expected_acks = []
+        self.last_ack_received = 0
+        self.terminating_ack= 0
+        self.total_bytes_sent = 0
+        self.data_packets = []
+        self.ready_packets = []
+        self.sender_payload = {}
+        self.retransmission_counter = 0
+        self.retransmission_queue = []
+        #receiver variables
+        self.end_connection = False
+        self.track_receiver_packets = []
+        self.initial_packet_tracker = 1
+        self.concat_check = False
+        self.corrupted_payload = ''
+        self.receiver_command = ''
+        self.ack = 1
+        self.window = 5120
+        self.window_receiver = 5120
+        self.receiver_packet_count = 1
+        self.window_sender = 5120
+        self.last_Command_Receiver = ''
+        self.last_Command_Sender = ''
+        self.total_bytes_received = ''
+        self.output_File = outputFile
+        self.receiver_payload = {}
+        #readable variables
+        self.payload = payload
+
+        #for sending
+        self.senderQueue=[]
+
+ for file in self.read_files:
+                with open(file,'rb') as f:
+                    #only payload length amount will be loaded from file
+                    data = f.read(self.payload_length)
+                    self.file_buffer.append(data)
+                    while len(data) != 0:
+                        data = f.read(self.payload_length)
+                        self.file_buffer.append(data)
+                        # print(self.file_buffer)
+                self.multiple_files_buffer.append(self.file_buffer)
+                print('multiple\n\n',self.multiple_files_buffer)
+                self.file_buffer.clear()
