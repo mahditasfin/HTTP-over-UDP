@@ -1,360 +1,177 @@
-import os, math ,sys, datetime, socket, logging, threading, select, json, re
-init_Connection = True
+import os, math ,sys, datetime, socket, logging, threading, select, json
 
-class UDPjointServerClient(object):
-    def __init__(self, inputFile, outputFile, payload, lsock):
-        self.sock = lsock
-        self.HEADER_LENGTH = 20
-        self.current_file_queue = []
-        self.file = ''
-        self.keep_track = 1
-        #sender variables
-        self.inputFile = inputFile
-        self.total_packets_left = 0
-        self.initial_expected_ack = 1
-        self.expected_ack = 0
-        self.start_Connection = False
-        self.sender_command = ''
-        self.syn = 0
-        self.seq = 0
-        self.len = 0
-        self.MSS = 1024
-        self.window_sender = 5120
-        self.file_Size = os.path.getsize(self.inputFile)
-        self.expected_acks = []
-        self.last_ack_received = 0
-        self.terminating_ack= 0
-        self.total_bytes_sent = 0
-        self.data_packets = []
-        self.ready_packets = []
-        self.sender_payload = {}
-        self.retransmission_counter = 0
+from multiprocessing import pool
+
+
+
+class UDPSingleClientHandler(object):
+    def __init__(self, buffer_size, payload_length):
+        self.start_connection = True
+        self.adress = ''
+        self.payload = ''
+        self.buffer = buffer_size
+        self.payload = payload_length
+        self.connections = []
+        self.readable_thread = ''
+        self.client_index = 0
+        self.syn,self.fin,self.rst,self.ack,self.dat = False, False, False, False, False
+        self.syn_ack, self.syn_ack_dat, self.syn_ack_dat_fin= False, False, False
+        self.sender_queue = []
         self.retransmission_queue = []
-        #receiver variables
-        self.end_connection = False
-        self.track_receiver_packets = []
-        self.initial_packet_tracker = 1
-        self.concat_check = False
-        self.corrupted_payload = ''
-        self.receiver_command = ''
-        self.ack = 1
-        self.window = 5120
-        self.window_receiver = 5120
-        self.receiver_packet_count = 1
-        self.window_sender = 5120
-        self.last_Command_Receiver = ''
-        self.last_Command_Sender = ''
-        self.total_bytes_received = ''
-        self.output_File = outputFile
-        self.receiver_payload = {}
-        #readable variables
-        self.payload = payload
+    
+    #first connection
+    #analyze if the received packet has
+        # syn
+        # syn-ack
+        # syn-ack-dat
+        # syn-ack-dat-fin
 
-        #for sending
-        self.senderQueue=[]
+    def extractHeader(self,payload):
+        content = payload.decode('utf-8').split('\n')
+        self.header = content[0]
+        print(self.header)
 
-
-
-        #return packets
-        #calculate expected acks
-
-
-    def initjsonObject(self,readerOrSender):
-        jsonObject = {}
-        if readerOrSender == 'receiver':
-            jsonObject['header'], jsonObject['body'] ={},{}
-            jsonObject['header']['comm'],jsonObject['header']['ack'],jsonObject['header']['win']='', 0,0
-
-        if readerOrSender == 'sender':
-            jsonObject['header'], jsonObject['body'] ={},{}
-            jsonObject['header']['comm'],jsonObject['header']['seq'],jsonObject['header']['len']='',0,0
-
-        return jsonObject
-
-
-    def formatSenderPayload(self, comm, seq, len, body):
-        self.sender_payload['header']['comm'] = comm
-        self.sender_payload['header']['seq'] = seq
-        self.sender_payload['header']['len'] = len
-
-        if body:
-            self.sender_payload['body'] = body
-
-
-
-
-    def formatReceiverPayload(self, comm, ack, window):
-        self.receiver_payload['header']['comm'] = comm
-        self.receiver_payload['header']['ack'] = ack
-        self.receiver_payload['header']['win'] = window
-
-    def updateExpectedAck(self):
-        #here the expected ack will get updated with the len it's sending
-        self.expected_ack = self.len + 1
-        pass
-
-    def createPackets(self):
-        if self.file_Size > 0:
-            with open(self.inputFile,'rb') as f:
-                data = f.read(self.MSS)
-                self.data_packets.append(data)
-                while len(data) != 0:
-                    data =f.read(self.MSS)
-                    self.data_packets.append(data)
-        self.total_packets_left = len(self.data_packets)
-
-
-
-    def start_sending_data(self):
-        self.sender_command='DAT'
-        if self.total_packets_left <= math.floor(self.window_sender/self.MSS):
-            for i in range(0, len(self.ready_packets)):
-                self.retransmission_queue.append(self.ready_packets[0])
-                self.current_file_queue.append(self.ready_packets.pop(0))
-                self.total_packets_left = self.total_packets_left-1
-        elif self.total_packets_left > math.floor(self.window_sender/self.MSS):
-            packets_can_be_sent = math.floor(self.window_sender/self.MSS)
-            for i in range(0,packets_can_be_sent):
-                for i in self.ready_packets:
-                    if i['packetNo'] == self.keep_track:
-                        self.retransmission_queue.append(self.ready_packets[0])
-                        self.current_file_queue.append(self.ready_packets.pop(0))
-                        self.keep_track= self.keep_track+1
-                        self.total_packets_left = self.total_packets_left-1
-
-
-    def startPacketing(self):
-        for i in self.data_packets:
-            sender_payload = {}
-            sender_payload['header'] = {}
-            sender_payload['header']['comm']='DAT'
-            sender_payload['header']['seq']=self.total_bytes_sent+1
-            sender_payload['header']['len']=len(i.decode('utf-8'))
-            sender_payload['body'] = i.decode('utf-8')
-            sender_payload['packetNo'] = self.data_packets.index(i)+1
-            self.total_bytes_sent+=len(i)
-
-            #expected acks are created too at the same time
-            self.expected_acks.append(self.total_bytes_sent+1)
-
-            self.ready_packets.append(sender_payload)
-
-        self.terminating_ack = self.expected_acks.pop(-1)
-
-
-
-    def updateSender(self):
-        self.receiver_payload = self.payload
-        self.sender_command = self.receiver_payload['header']['comm']
-
-
-        if self.sender_command:
-            if self.sender_command == 'ACK':
-                if self.receiver_payload['header']['ack'] == self.initial_expected_ack:
-                    self.retransmission_queue.pop(0)
-                    self.last_ack_received = self.receiver_payload['header']['ack']
-                    self.initial_expected_ack = 0
-                    self.window_sender = self.receiver_payload['header']['win']
-                    self.start_sending_data()
-                elif self.file_Size+2 == self.receiver_payload['header']['ack']:
-                    sys.exit()
-                elif len(self.expected_acks)>0:
-                       if self.receiver_payload['header']['ack'] == self.expected_acks[0]:
-                        self.expected_acks.pop(0)
-                        self.last_ack_received = self.receiver_payload['header']['ack']
-                        self.window_sender = self.receiver_payload['header']['win']
-                        self.retransmission_queue.pop(0)
-                        if len(self.ready_packets)>0:
-                            self.start_sending_data()
-#                         if len(self.expected_acks) == 0:
-#                             self.sender_command = 'FIN'
-                elif self.receiver_payload['header']['ack'] == self.last_ack_received:
-                    self.retransmission_counter = self.retransmission_counter+1
-                    if self.retransmission_counter == 3:
-                        self.retransmit()
-
-
-
-
-    def readabletriggered(self, payload):
-        payload = payload.decode('utf-8')
-        self.payload = json.loads(payload)
-
-        comm = self.payload['header']['comm']
-
-        #heart of the system:
-        if comm == 'SYN':
+    def commandCentre(self):
+        print('INSIDE COMMAND CENTER\n\n')
+        #here everything will go down
+        if self.syn:
+            #syn
+            packet = 'ACK'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(1)+'\n'+'Windows: '+str(0)
+            self.sender_queue.append('Server')
             date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Receive;',comm+';','Sequence:',str(self.payload['header']['seq'])+';','Length:',str(self.payload['header']['len']))
-            self.updateReceiver()
-        elif comm == 'ACK':
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Receive;','ACK;','Acknowledgement:',str(self.payload['header']['ack'])+';','Window:',str(self.payload['header']['win']))
-            self.updateSender()
-        elif comm == 'DAT':
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Receive;',comm+';','Sequence:',str(self.payload['header']['seq'])+';','Length:',str(self.payload['header']['len']))
-            self.updateReceiver()
-        elif comm == 'FIN':
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Receive;',comm+';','Sequence:',str(self.payload['header']['seq'])+';','Length:',str(self.payload['header']['len']))
-            self.updateReceiver()
+            print(date_time+',Send;',+';','Sequence:',str(0),';Length:',str(0),self.adress)
+            self.retransmission_queue.append(packet)
+            self.transmit(packet)
+            print('COMMAND : SYN')
+        elif self.syn and self.ack:
+            self.syn_ack = True
+            print('COMMAND : SYN|ACK')
+        elif self.syn and self.ack and self.dat:
+            #straight data sending
+            self.syn_ack_dat = True
+            print('COMMAND : SYN|ACK|DAT')
+        elif self.syn and self.ack and self.dat and self.fin:
+            self.syn_ack_dat_fin = True
+            # straight data sending
+            print('COMMAND : SYN|ACK|DAT')
+     
+        
 
-        elif comm == 'RST':
-            self.updateSender()
+    def initConnection(self,payload):
+        #syn here
+        print('client level: Extracting headers from payload')
+        commands = self.header.split('|')
+        if len(commands) > 0:
+            #the first command received for each client
+            for i in commands:
+                if i == 'SYN':
+                    print('Has SYN')
+                    self.syn = True
+                
+                if i == 'ACK':
+                    print('Has ACK')
+                    self.ack = True
+                
+                if i == 'DAT':
+                    print('Has DAT')
+                    self.dat = True
+                
+                if i == 'FIN':
+                    print('Has FIN')
+                    self.fin = True
 
+        
 
-    def writeInFile(self):
-        for i in self.track_receiver_packets:
-            self.file.write(i['body'])
-        self.file.close()
-
-    def concatCheck(self):
-        if self.sender_payload:
-            isConcat = len(re.findall('["]packetNo["][:]', json.dumps(self.sender_payload)))
-        if isConcat>1:
-            self.concat_check = True
-
-
-    def updateReceiver(self):
-        self.sender_payload = self.payload
-        self.receiver_command = self.sender_payload['header']['comm']
-        if self.receiver_command:
-            if self.receiver_command == 'SYN':
-                self.receiver_command = 'ACK'
-            elif self.receiver_command == 'DAT':
-                self.concatCheck()
-                if self.sender_payload["packetNo"]:
-                    dummy_object = {
-                        'ack': self.sender_payload['header']['seq']+self.sender_payload['header']['len'],
-                        'packetIndex': self.sender_payload["packetNo"],
-                        'body': self.sender_payload['body']
-                    }
-                    iteration_present = False
-                    for i in self.track_receiver_packets:
-                        if i['packetIndex'] == dummy_object['packetIndex']:
-                            iteration_present= True
-                    if not iteration_present:
-                        self.track_receiver_packets.append(dummy_object)
-                    if self.track_receiver_packets and len(self.track_receiver_packets)>1:
-                        self.track_receiver_packets = sorted(self.track_receiver_packets, key = lambda d: d['packetIndex'])
-                        contains_next = self.check_next()
-                        if contains_next != 0:
-                            self.ack = self.track_receiver_packets[contains_next]['ack']
-                            self.initial_packet_tracker = self.initial_packet_tracker+1
-                    elif self.sender_payload["packetNo"] == self.initial_packet_tracker:
-                        self.ack = self.sender_payload['header']['seq']+self.sender_payload['header']['len']
-                        self.initial_packet_tracker = self.initial_packet_tracker+1
-                    self.window_receiver = self.window-self.MSS
-                    self.receiver_command = 'ACK'
-                    self.receiver_packet_count = self.receiver_packet_count+1
-
-
-
-
-
-    def check_next(self):
-        for i in range(0,len(self.track_receiver_packets)):
-            if self.track_receiver_packets[i]['packetIndex'] == self.initial_packet_tracker:
-                return i
-        return 0
-
-
-    def checkReceiver(self):
-        if self.receiver_command == 'ACK':
-            self.formatReceiverPayload(self.receiver_command, self.ack, self.window_receiver)
-            self.senderQueue.append('Receiver')
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Send;','ACK;','Acknowledgement:',str(self.ack)+';','Window:',str(self.receiver_payload['header']['win']))
-            self.transmit(self.receiver_payload)
-            self.receiver_command = ''
-        elif self.receiver_command == 'FIN' and not self.end_connection:
-            self.end_connection = True
-            #write here
-            self.writeInFile()
-            self.formatReceiverPayload('ACK',self.file_Size+2, self.window_receiver)
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+':','Send;','ACK;','Acknowledgement:',str(self.file_Size+2)+';','Window:',str(self.receiver_payload['header']['win']))
-            self.senderQueue.append('Receiver')
-            self.transmit(self.receiver_payload)
-
-
-
-    def checkSender(self):
-        if self.sender_command == 'DAT':
-            for i in range(0,len(self.current_file_queue)):
-                self.senderQueue.append('Sender')
-                date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-                if self.current_file_queue[0]['header']['seq'] == self.file_Size+1:
-                    self.current_file_queue[0]['header']['comm'] = 'FIN'
-                print(date_time+':','Send;',self.current_file_queue[0]['header']['comm']+';Sequence:'+str(self.current_file_queue[0]['header']['seq'])+';','Length:',str(self.current_file_queue[0]['header']['len']))
-                self.transmit(self.current_file_queue.pop(0))
-        elif self.sender_command == 'FIN':
-            self.senderQueue.append('Sender')
-            self.formatSenderPayload(self.sender_command, self.total_bytes_sent+1, 0, '')
-            self.sender_payload['body'] = ''
-            self.transmit(self.sender_payload)
-
-
-    def writabaletriggered(self):
-        if self.start_Connection:
-            #needs to send SYN
-            self.sender_command = 'SYN'
-            self.formatSenderPayload(self.sender_command,self.seq,self.len,'')
-            self.senderQueue.append('Sender')
-            date_time = datetime.datetime.now().strftime("%a %d %b %H:%M:%S PDT %Y")
-            print(date_time+',Send;',self.sender_command+';','Sequence:',str(self.seq),';Length:',str(self.len))
-            self.retransmission_queue.append(self.sender_payload)
-            self.transmit(self.sender_payload)
-            self.start_Connection = False
-        self.checkSender()
-        self.checkReceiver()
-
+    #every next payload after init connection
+    #work on it after 2nd packet starts coming
+    def receivedPayload(self, payload):
+        self.extractHeader(payload)
+        print('2nd packet', payload)
 
 
     def transmit(self, payload):
-        echo_port = ('10.10.1.100', 8888)
         if self.senderQueue.pop(0):
-            self.sock.sendto(json.dumps(payload).encode('utf-8'), echo_port)
+            self.sock.sendto((payload).encode('utf-8'), self.adress)
+        
+
+    #run will start initial connection
+    def run(self,client_adress, payload):
+        self.adress = client_adress
+        self.extractHeader(payload)
+        self.initConnection(payload)
+    
+        print('reached here')
 
 
 
-    def retransmit(self):
-        echo_port = ('10.10.1.100', 8888)
-        self.senderQueue.append('Sender')
-        for i in self.retransmission_queue:
-            if self.last_ack_received == i['header']['seq']:
-                self.sock.sendto(json.dumps(i).encode('utf-8'), echo_port)
+
+#work done 
+
+class UDPMultiClientHandler(object):
+    def __init__(self, buffer_size, payload_length):
+        self.start_connection = True
+        self.payload = ''
+        self.buffer = buffer_size
+        self.payload_len = payload_length
+        self.connections = []
+        self.client_generic_name = 'client-'
+        self.client_counter = 0
+        self.readable_thread = ''
+        print('Made Object')
+
+    #start each client
+    def startSingleClientHandler(self, client_adress,payload):
+        self.client_counter = self.client_counter+1
+        print('only for new clients\n',self.client_counter,'\n\n')
+        client_reg = {}
+        client_name= self.client_generic_name + str(self.client_counter)
+        client_reg[client_name],client_reg['client-address']=UDPSingleClientHandler(self.buffer, self.payload),client_adress[1]
+        client_reg[client_name].run(client_adress, payload)
+        self.connections.append(client_reg)
+
+    #searches through the list of connections
+    def search(self, client_address):
+        for items in self.connections:
+                if items['client-address'] == client_address[1]:
+                    return self.connections.index(items)
+        return -1
+                
+            
+    #checks if client exists everytime readable is triggered
+    def checkClientExists(self, payload, client_address):
+        #very first connection
+        if not self.connections:
+            print('starting 1st client\n\n')
+            self.startSingleClientHandler(client_address,payload)
+        elif self.connections:
+            #very every other connections from the 2nd o
+            client_exist = self.search(client_address)
+            counter = client_exist+1
+            if client_exist>=0:
+                print('Client is registered')
+                self.connections[client_exist][self.client_generic_name + str(counter)].receivedPayload(payload)
+            elif client_exist == -1:
+                self.startSingleClientHandler(client_address,payload)
+
+    def run(self):
+        self.start_connection = False
+        
+        
 
 
 
+def checkClient(client_data, client_address):
+    pass
 
 
-    def setup(self):
-        if init_Connection:
-            self.start_Connection = True
-            self.file = open("copy.txt", "w")
-            self.receiver_payload = self.initjsonObject('receiver')
-            self.sender_payload = self.initjsonObject('sender')
-            self.createPackets()
-            self.startPacketing()
-        #setUp everything
-
-
-def checkCorruptedPayload(payload):
-    corrupted_payload = payload.decode('utf-8')
-    extract_packet = re.search('["]DAT["]',corrupted_payload)
-    if extract_packet:
-        isCorrupted = [m.start() for m in re.finditer('["]body["][:]', corrupted_payload)]
-        if len(isCorrupted) != 1:
-            return False
-    return True
 
 def startConnectionThread():
     host = str(sys.argv[1])
     port = int(sys.argv[2])
     buffer_size = sys.argv[3]
     payload_length = sys.argv[4]
+
+    all_connections = []
 
     logger = logging.getLogger()
 
@@ -364,32 +181,31 @@ def startConnectionThread():
     sock.bind((host,port))
     potential_reader = [sock]
     potential_writer = [sock]
+    primeServer = UDPMultiClientHandler(buffer_size,payload_length)
 
 
-
-    # if init_Connection:
-    #     jointClientServer = UDPjointServerClient(readFile,writeFile,b'',sock)
-    #     jointClientServer.setup()
+    if primeServer.start_connection:
+        primeServer.run()
+    
+    init_Connection = False
+        
 
     counter = 1
     try:
         while True:
             readable, writable, exceptional = select.select(potential_reader, potential_writer, potential_reader,2)
             if sock in writable:
-                # jointClientServer.writabaletriggered()
-                sock.sendto(b'SYN|ACK',('localhost',80))
+                # UDPMultiClientHandler.writabaletriggered()
                 potential_writer.remove(sock)
 
 
             if sock in readable:
                 counter= counter+1
-                clientData, clientAddress = sock.recvfrom(int(buffer_size))
-                print(clientData, clientAddress)
-                potential_writer.append(sock)
-                # clientData_not_corrupted = checkCorruptedPayload(clientData)
-                # if clientData_not_corrupted:
-                #     jointClientServer.readabletriggered(clientData)
-                #     potential_writer.append(sock)
+                client_data, client_address = sock.recvfrom(int(buffer_size))
+                print(client_address,'triggered \n\n')
+                if client_data:
+                    primeServer.checkClientExists(client_data, client_address)
+                    potential_writer.append(sock)
 
             if not (readable or writable or exceptional):
                 potential_writer.append(sock)
@@ -401,8 +217,5 @@ def startConnectionThread():
 
 
 if __name__ == '__main__':
-
-    #starting thread which will start class
-
     startConnection = threading.Thread(target=startConnectionThread())
     startConnection.start()
