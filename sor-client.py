@@ -1,3 +1,4 @@
+import time
 from logging import fatal
 from os import read
 import socket, threading, selectors, sys, select
@@ -90,8 +91,17 @@ class UDPClientHandler(object):
         if self.initConnection:
             if len(self.read_files) > 1:
                 print('starting connection')
-                packet = 'SYN|ACK'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
-                self.socket.sendto(packet.encode('utf-8'), self.server)
+                packet1 = 'SYN'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
+                packet2 = 'SYN|ACK'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
+                packet3 = 'SYN|ACK|DAT|FIN'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
+                packet4 = 'SYN|ACK|DAT'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
+                packet5 = 'SYN|ACK'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(0)+'\n'+'Acknowledgement: '+str(-1)+'\n'+'Windows: '+str(self.window_size)
+                self.socket.sendto(packet1.encode('utf-8'), self.server)
+                time.sleep(1)
+                self.socket.sendto(packet2.encode('utf-8'), self.server)
+                # self.socket.sendto(packet3.encode('utf-8'), self.server)
+                # self.socket.sendto(packet4.encode('utf-8'), self.server)
+                # self.socket.sendto(packet5.encode('utf-8'), self.server)
             elif len(self.read_files) == 1:
                 packet = 'SYN|DAT|ACK|FIN'+'\n'+'Sequence: '+str(0)+'\n'+'Length: '+str(len(self.read_files[0]))+'\n'+'Acknowledgement: '+str(0)+'\n'+'Windows: '+str(self.window_size)+'\n\n'+'GET/'+self.read_files[0]+' HTTP/1.0'+'\n'
                 self.packet_buffer.append(packet)
@@ -173,7 +183,7 @@ def startClientConnectionThread():
                     else:
                         counter = counter+2
         else:
-            print("Inconsisten read and write file combination")
+            print("Inconsistent read and write file combination")
             sys.exit()
     print(read_File_List,write_File_List_)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
