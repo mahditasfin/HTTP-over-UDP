@@ -3,8 +3,8 @@
 
 HTTP implemented over UDP protocol
 
-#run-client: python3 sor-client.py <server-ip> <server-port> <buffer-size> <payload-length> <read-file> <write-file>
-#run-server: python3 sor-server.py <server-ip> <server-port> <buffer-size> <payload-length>
+run-client: python3 sor-client.py <server-ip> <server-port> <buffer-size> <payload-length> <read-file> <write-file>
+run-server: python3 sor-server.py <server-ip> <server-port> <buffer-size> <payload-length>
   
 To do:
 refractoring
