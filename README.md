@@ -3,7 +3,7 @@
 
 HTTP implemented over UDP protocol
 
-run-client: python3 sor-client.py server-ip server-port buffer-size payload-length read-file write-file
+run-client: python3 sor-client.py server-ip server-port buffer-size payload-length read-file write-file \n
 run-server: python3 sor-server.py server-ip server-port buffer-size payload-length
   
 To do:
